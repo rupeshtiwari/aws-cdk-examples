@@ -72,3 +72,4 @@ $ cdk destroy
 
 - [OpenSearch Service Boto3 API documentations](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/opensearch.html)
 - [Using the AWS SDKs to interact with Amazon OpenSearch Ingestion](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/osis-sdk.html)
+- [AmazonOpenSearchIngestionFullAccess Policy](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AmazonOpenSearchIngestionFullAccess.html)
