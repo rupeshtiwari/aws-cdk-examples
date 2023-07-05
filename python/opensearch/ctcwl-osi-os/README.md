@@ -1,7 +1,9 @@
 
-# Welcome to your CDK Python project!
+# AWS CloudTrail to S3 to OpenSearch Ingestion Service to Amazon OpenSearch Service
 
-This is a blank project for CDK development with Python.
+This AWS CDK project aims to provision a comprehensive infrastructure environment by leveraging various AWS services like [Amazon CloudTrail](https://www.amazonaws.cn/en/cloudtrail/), [Amazon S3](https://aws.amazon.com/s3/), [Amazon OpenSearch Ingestion (OSI)](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/ingestion.html), and [Amazon OpenSearch Service (AOS)](https://aws.amazon.com/opensearch-service/). CloudTrail enables the logging and tracking of API activities, while S3 acts as the storage repository. OSI plays a crucial role by reading the CloudTrail logs stored in S3 and indexing them into AOS for efficient searching and analysis. By automating the provisioning process using CDK, this project ensures a streamlined and scalable infrastructure setup, empowering organizations to effectively monitor and analyze their AWS resources.
+
+![](docs/architecture.png)
 
 The `cdk.json` file tells the CDK Toolkit how to execute your app.
 
