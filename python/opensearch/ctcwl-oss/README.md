@@ -101,6 +101,6 @@ $ cdk destroy
 1. `CloudWatch Log groups`
 2. `s3 buckets`
 
-# cwctl-oss
+
 
 
