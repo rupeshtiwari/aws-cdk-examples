@@ -68,8 +68,7 @@ $ cdk destroy
 2. `s3 buckets`
 
 
+## References
 
-https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/opensearch/client/create_domain.html
-
-
-https://docs.aws.amazon.com/opensearch-service/latest/developerguide/osis-sdk.html
+- [OpenSearch Service Boto3 API documentations](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/opensearch.html)
+- [Using the AWS SDKs to interact with Amazon OpenSearch Ingestion](https://docs.aws.amazon.com/opensearch-service/latest/developerguide/osis-sdk.html)
