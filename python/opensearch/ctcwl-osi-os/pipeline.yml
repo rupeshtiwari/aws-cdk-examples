@@ -1,0 +1,30 @@
+version: "2"
+ad-pipeline:
+  source:
+    http:
+      path: "/${pipelineName}/test_ingestion_path"
+  processor:
+    - date:
+        from_time_received: true
+        destination: "@timestamp"
+    - aggregate: # Creating metrics for anomaly_detector
+        identification_keys: ["id"]
+        action:
+          count:
+        group_duration: "2s"
+    - anomaly_detector:
+        # Specify the key on which to run anomaly detection
+        keys: ["value"]
+        mode:
+          random_cut_forest:
+            output_after: 200 # 32 is default but we get false negative so changing to 200. We need 1000 sample to get anomaly
+  sink:
+    - opensearch:
+        hosts:
+          [
+            "https://search-ingestion-domain-3n4t6lsy5l7brw7axldrbdsz3e.us-east-1.es.amazonaws.com",
+          ]
+        aws:
+          sts_role_arn: "arn:aws:iam::147228461610:role/PipelineRole"
+          region: "us-east-1"
+        index: "ad-anomaly-index"

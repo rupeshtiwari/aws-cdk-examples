@@ -6,34 +6,58 @@ from aws_cdk import (
     aws_secretsmanager as secretsmanager,
     Stack,
     CfnOutput,
+    aws_osis as osis,
+    Fn,
+    RemovalPolicy,
+    Token,
 )
 import random
 from constructs import Construct
 import boto3
 import time
 import string
-import json
 
 
 class CtcwlOsiOsStack(Stack):
     region = "us-east-1"
     account = ""
-
-    # Fetch the AWS account ID from STS credentials
+    queue_name = "S3EventQueue"
 
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         self.account = self.get_aws_account_id()
 
-        # Generate a unique bucket name for CloudTrail
-        bucket_name = f"cloudtrail-bucket-{self.region}-{self.account}"
+        # Generate a unique bucket name using the current timestamp
+        bucket_name = f"my-bucket-{int(time.time())}"
+
+        # Create pipeline role
+        pipeline_role_name = "PipelineRole1"
+        pipeline_role = iam.Role(
+            self,
+            pipeline_role_name,
+            assumed_by=iam.ServicePrincipal("osis-pipelines.amazonaws.com"),
+            description="Role for OSIS pipeline",
+        )
+        CfnOutput(
+            self,
+            "RoleCreationComplete",
+            value=Token.as_string(pipeline_role.role_name),
+            export_name="RoleCreationComplete",
+        )
+        # Get the ARN of the role
+        pipeline_role_arn = pipeline_role.role_arn
 
         # Create an S3 bucket to store CloudTrail logs
-        bucket = s3.Bucket(self, "CloudTrailBucket", bucket_name=bucket_name)
+        bucket = s3.Bucket(
+            self,
+            "CloudTrailBucket",
+            bucket_name=bucket_name,
+            removal_policy=RemovalPolicy.DESTROY,
+        )
 
         # Create an SQS queue for S3 event notifications
-        queue = sqs.Queue(self, "S3EventQueue")
+        queue = sqs.Queue(self, self.queue_name)
 
         # Subscribe the queue to S3 bucket notifications
         # bucket.add_event_notification(s3.EventType.OBJECT_CREATED, queue)
@@ -100,9 +124,6 @@ class CtcwlOsiOsStack(Stack):
             },
         )
 
-        CfnOutput(self, "Username:", value=master_user_name)
-        CfnOutput(self, "Password:", value=master_user_password)
-
         # Wait for the domain to be active
         while True:
             response = opensearch_client.describe_domains(
@@ -119,25 +140,54 @@ class CtcwlOsiOsStack(Stack):
         domain_arn = domain_status["ARN"]
         print("OpenSearch domain ARN:", domain_arn)
 
-        # Create OpenSearch ingestion pipeline role if not exists
-        pipeline_role_name = "PipelineRole1"
-        pipeline_role = self.get_or_create_pipeline_role(pipeline_role_name, domain_arn)
+        # Update Pipeline Role with domain access
+        describe_policy = iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            resources=[domain_arn],
+            actions=[
+                "es:DescribeDomain",
+            ],
+        )
+        pipeline_role.add_to_policy(describe_policy)
+        index_policy = iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            resources=[f"{domain_arn}/*"],
+            actions=[
+                "es:ESHttp*",
+            ],
+        )
+        pipeline_role.add_to_policy(index_policy)
+        trust_policy = iam.PolicyStatement(
+            effect=iam.Effect.ALLOW,
+            actions=["sts:AssumeRole"],
+            resources=[pipeline_role_arn],
 
-        # Create OpenSearch ingestion pipeline
-        pipeline_name = "my-pipeline"
-        osis_client = boto3.client("osis")
+        )
+        pipeline_role.add_to_policy(trust_policy)
+
+        print("pipeline_role_arn", pipeline_role_arn)
+
+        # Create OpenSearch ingestion pipeline role
+
+        pipeline_name = "my-pipeline1"
+        queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.queue_name}"
+
+        pipeline_role_arn = (
+            "arn:aws:iam::147228461610:role/OpenSearchIngestionFullAccessRole"
+        )
+
         definition = f'''version: "2"
 log-pipeline:
   source:
     s3:
-      bucket: "{bucket.bucket_name}"
+      bucket: "{bucket_name}"
       prefix: ""
-      sqs: "{queue.queue_arn}"
+      sqs: "{queue_arn}"
       notification_type: "sqs"
       codec: "json"  # Add the codec parameter with a valid value
       aws:
         region: "{self.region}"
-        sts_role_arn: "{pipeline_role.role_arn}"
+        sts_role_arn: "{pipeline_role_arn}"
   processor:
     - date:
         from_time_received: true
@@ -147,17 +197,21 @@ log-pipeline:
         hosts: ["https://{domain_endpoint}"]
         index: "cloudtrail_logs"
         aws:
-          sts_role_arn: "{pipeline_role.role_arn}"
+          sts_role_arn: "{pipeline_role_arn}"
           region: "{self.region}"'''
 
-        response = osis_client.create_pipeline(
-            PipelineName=pipeline_name,
-            MinUnits=4,
-            MaxUnits=9,
-            PipelineConfigurationBody=definition,
+        print("Pipeline definition: ", definition)
+
+        cfn_pipeline = osis.CfnPipeline(
+            self,
+            "MyCfnPipeline",
+            max_units=4,
+            min_units=1,
+            pipeline_configuration_body=definition,
+            pipeline_name=pipeline_name,
         )
 
-        print("OpenSearch ingestion pipeline created:", response["PipelineId"])
+        print("OpenSearch ingestion pipeline created:", cfn_pipeline)
 
         # Print the master user credentials
         CfnOutput(self, "Username:", value=master_user_name)
@@ -172,45 +226,6 @@ log-pipeline:
         password += random.choice(string.punctuation)
         password = "".join(random.sample(password, len(password)))
         return password
-
-    def get_or_create_pipeline_role(self, role_name, domain_arn):
-        iam_client = boto3.client("iam")
-
-        try:
-            # Check if the role already exists
-            response = iam_client.get_role(RoleName=role_name)
-            print("Pipeline role already exists:", response["Role"]["RoleName"])
-            return iam.Role.from_role_arn(self, "PipelineRole", response["Role"]["Arn"])
-        except iam_client.exceptions.NoSuchEntityException:
-            # Create the role if it doesn't exist
-            role = iam.Role(
-                self,
-                role_name,
-                assumed_by=iam.ServicePrincipal("osis-pipelines.amazonaws.com"),
-            )
-
-            # Attach necessary policies to the role
-            policy = iam.Policy(
-                self,
-                f"{role_name}Policy",
-                policy_name=f"{role_name}Policy",
-                statements=[
-                    iam.PolicyStatement(
-                        actions=["es:DescribeDomain"],
-                        resources=[domain_arn],
-                    ),
-                    iam.PolicyStatement(
-                        actions=["es:ESHttp*"],
-                        resources=[f"{domain_arn}/*"],
-                    ),
-                ],
-            )
-            role.attach_inline_policy(policy)
-
-            print('Creating pipeline role...')
-            time.sleep(10)
-            print('Role created: ' + role_name)
-            return role
 
     def get_aws_account_id(self):
         sts_client = boto3.client("sts")
