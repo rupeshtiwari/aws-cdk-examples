@@ -60,7 +60,7 @@ class CtcwlOsiOsStack(Stack):
         queue = sqs.Queue(self, self.queue_name)
 
         # Subscribe the queue to S3 bucket notifications
-        # bucket.add_event_notification(s3.EventType.OBJECT_CREATED, queue)
+        bucket.add_event_notification(s3.EventType.OBJECT_CREATED, queue)
 
         # Master user for opensearch dashboard
         master_user_name = "admin"
@@ -171,7 +171,7 @@ class CtcwlOsiOsStack(Stack):
 
         pipeline_name = "my-pipeline1"
         queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.queue_name}"
-
+        queue_url =  f"https://sqs.{self.region}.amazonaws.com/{self.account}/{self.queue_name}"
         pipeline_role_arn = (
             "arn:aws:iam::147228461610:role/OpenSearchIngestionFullAccessRole"
         )
@@ -180,11 +180,11 @@ class CtcwlOsiOsStack(Stack):
 log-pipeline:
   source:
     s3:
-      bucket: "{bucket_name}"
-      prefix: ""
-      sqs: "{queue_arn}"
       notification_type: "sqs"
-      codec: "json"  # Add the codec parameter with a valid value
+      codec: "json"
+      compression: none
+      sqs:
+        queue_url: "{queue_url}"
       aws:
         region: "{self.region}"
         sts_role_arn: "{pipeline_role_arn}"
